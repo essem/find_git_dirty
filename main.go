@@ -1,15 +1,18 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"path"
+
+	"github.com/logrusorgru/aurora"
 )
 
-func walk(cwd string) {
+func walk(cwd string, hideClean bool) {
 	files, err := ioutil.ReadDir(cwd)
 	if err != nil {
 		log.Fatal(err)
@@ -25,24 +28,28 @@ func walk(cwd string) {
 			continue
 		}
 		if file.Name() == ".git" {
-			inspect(cwd)
+			inspect(cwd, hideClean)
 			continue
 		}
-		walk(fullpath)
+		walk(fullpath, hideClean)
 	}
 }
 
-func inspect(dir string) {
-	fmt.Print(dir + ": ")
+func inspect(dir string, hideClean bool) {
+	status := getGitStatus(dir)
+	if !hideClean || status.Reset().String() != "clean" {
+		fmt.Printf("%s: %s\n", status.String(), dir)
+	}
+}
 
+func getGitStatus(dir string) aurora.Value {
 	cmd := exec.Command("git", "-C", dir, "status", "--porcelain")
 	out, err := cmd.Output()
 	if err != nil {
 		log.Fatal(err)
 	}
 	if len(out) != 0 {
-		fmt.Println("dirty")
-		return
+		return aurora.Red("dirty")
 	}
 
 	cmd = exec.Command("git", "-C", dir, "log", "--branches", "--not", "--remotes")
@@ -51,13 +58,15 @@ func inspect(dir string) {
 		log.Fatal(err)
 	}
 	if len(out) != 0 {
-		fmt.Println("not-pushed")
-		return
+		return aurora.Yellow("not-pushed")
 	}
 
-	fmt.Println("clean")
+	return aurora.Green("clean")
 }
 
 func main() {
-	walk(".")
+	hideCleanPtr := flag.Bool("hide-clean", false, "Hide clean repository")
+	flag.Parse()
+
+	walk(".", *hideCleanPtr)
 }
